@@ -7,7 +7,7 @@ import threading
 import uuid
 
 
-bot = telebot.TeleBot("5967390922:AAEmDl-fLntXG5dFXA1IA-Yaap9-dkpMxQw")
+bot = telebot.TeleBot("6133256899:AAEKrNeoX4iLQk3vmsDnzMbhOA-dqgaKnIY")
 
 giveaways = {} 
 
@@ -16,6 +16,8 @@ blacklist = []
 API_KEY = "2748b8f5-8e99-4210-845d-78176b3a1f62"
 
 allowed_groups = [-648266309,-1001679321636,-1001856181857,-1001467085152,-1001733766092]
+
+lock = threading.Lock()
 
 @bot.message_handler(commands=['start'])
 def start_command(message):
@@ -113,7 +115,7 @@ def callback_handler(call):
             reply_markup.add(telebot.types.InlineKeyboardButton("Leave Giveaway", callback_data=f"leave_giveaway:{giveaway_id}"))
             bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=reply_markup)
             bot.answer_callback_query(call.id, "You have successfully joined the giveaway.")
-            
+
             print(giveaways)
             
         elif call.data.startswith(("leave_giveaway:")):
@@ -261,6 +263,7 @@ def giveaway_handler(message):
         reply_markup = telebot.types.InlineKeyboardMarkup()
         reply_markup.add(telebot.types.InlineKeyboardButton(f"Join Giveaway [{num_participants}]", callback_data=f"join_giveaway:{giveaway_id}"))
         bot.send_message(chat_id, message_text, reply_markup=reply_markup)
+        giveaways[giveaway_id]["message_id"] = message.message_id +1
         bot.delete_message(message.chat.id,message.id)
         time_thread = threading.Thread(target=time_check)
         time_thread.start()
@@ -287,11 +290,13 @@ def end_giveaway(giveaway_id):
     message_text = f"The giveaway for {giveaway['amount']} {giveaway['currency']} has ended. The winners are:"
     for winner in winners:
         member = bot.get_chat_member(chat_id, winner)
-        first_name = member.first_name
-        message_text += f"<a href='tg://user?id={member}'>{first_name}</a>"
         message_text += f"\n- @{member.user.username} "
     message_text += f"\n\nPlease submit your wallet address to @xingman within 2 hours."
-    bot.send_message(chat_id, message_text)
+    msgid = giveaway["message_id"]
+    bot.send_message(chat_id, message_text, reply_to_message_id= msgid)
+
+
+
 
 
 
@@ -357,11 +362,24 @@ def unblacklist_user(message):
             bot.reply_to(message, "You must be an admin to use this command.")
 
 def time_check():
-    while True:
-        for giveaway_id, giveaway in list(giveaways.items()):
-            giveaway["duration"] -= 1
-            if giveaway["duration"] <= 0:
-                end_giveaway(giveaway_id)
-        time.sleep(1)
+    with lock:
+        time.sleep(10)
+        while True:
+            for giveaway_id, giveaway in list(giveaways.items()):
+                giveaway["duration"] -= 10
+                num_winners = giveaway["num_winners"]
+                currency = giveaway["currency"]
+                amount = giveaway["amount"]
+                time_left = giveaway["duration"]
+                if time_left > 0 :
+                    message_text = f"🎉 Giveaway Time 🎉 \n\n🎁Reward - {amount} {currency} \n\n🏆Winners - {num_winners}\n\n⏱End In {time_left//86400}d:{time_left%86400//3600}h:{time_left%3600//60}m:{time_left%60}s."
+                    reply_markup = telebot.types.InlineKeyboardMarkup()
+                    num_participants = len(giveaway["participants"])
+                    reply_markup.add(telebot.types.InlineKeyboardButton(f"Join Giveaway [{num_participants}]", callback_data=f"join_giveaway:{giveaway_id}"))
+                    reply_markup.add(telebot.types.InlineKeyboardButton("Leave Giveaway", callback_data=f"leave_giveaway:{giveaway_id}"))
+                    bot.edit_message_text(chat_id=giveaway["chat_id"], message_id=giveaway["message_id"], text=message_text, reply_markup=reply_markup)
+                else:
+                    end_giveaway(giveaway_id)
+            time.sleep(10)
 
 bot.infinity_polling()
