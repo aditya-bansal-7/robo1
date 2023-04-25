@@ -290,10 +290,11 @@ def end_giveaway(giveaway_id):
     message_text = f"The giveaway for {giveaway['amount']} {giveaway['currency']} has ended. The winners are:"
     for winner in winners:
         member = bot.get_chat_member(chat_id, winner)
-        message_text += f"\n- @{member.user.username} "
+        first_name = member.first_name
+        message_text += f"<a href='tg://user?id={member}'>{first_name}</a> - @{member.user.username}"
     message_text += f"\n\nPlease submit your wallet address to @xingman within 2 hours."
-    msgid = giveaway["message_id"]
-    bot.send_message(chat_id, message_text, reply_to_message_id= msgid)
+    bot.send_message(chat_id, message_text , parse_mode='HTML')
+   
 
 
 
