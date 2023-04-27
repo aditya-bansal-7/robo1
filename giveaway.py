@@ -5,7 +5,8 @@ from telebot import types
 import requests
 import threading
 import uuid
-
+import json
+import os
 
 bot = telebot.TeleBot("6133256899:AAEKrNeoX4iLQk3vmsDnzMbhOA-dqgaKnIY")
 
@@ -16,6 +17,8 @@ blacklist = []
 API_KEY = "2748b8f5-8e99-4210-845d-78176b3a1f62"
 
 allowed_groups = [-648266309,-1001679321636,-1001856181857,-1001467085152,-1001733766092]
+
+role_file = os.path.join(os.getcwd(), "role.json")
 
 lock = threading.Lock()
 
@@ -89,11 +92,36 @@ def callback_handler(call):
         if giveaway is None:
             bot.answer_callback_query(call.id, "Sorry, this giveaway is no longer available.")
             return
+        chat_id = call.message.chat.id
         user_id = call.from_user.id
+        role = giveaway["role"]
+        if role == None:
+            pass
+        else:
+            if not os.path.exists(role_file):
+                with open(role_file, 'w') as f:
+                    f.write("{}")
+            with open(role_file, 'r') as f:
+                roles = json.load(f)
+            
+            chat_id = str(call.message.chat.id)
+
+            chat_roles = roles.get(chat_id, {})
+            
+            role_users = chat_roles.get(role, [])
+            
+
+            if user_id in role_users:
+                pass
+            else:
+                bot.answer_callback_query(call.id, f"To join this draw you must have {role} role")
+                return
+        
+        chat_id = call.message.chat.id
         if user_id in blacklist:
             bot.answer_callback_query(call.id, "You are blacklisted and cannot join this giveaway.")
             return
-        chat_id = call.message.chat.id
+        
         user_id = call.from_user.id
         # Check if user is a member of the chat
         chat_info = bot.get_chat(chat_id)
@@ -109,14 +137,14 @@ def callback_handler(call):
                 return
             giveaways[giveaway_id]["participants"].append(user_id)
             
+            time_left = giveaway["duration"]
+            print(time_left)
             num_participants = len(giveaways[giveaway_id]["participants"])
             reply_markup = telebot.types.InlineKeyboardMarkup()
             reply_markup.add(telebot.types.InlineKeyboardButton(f"Join Giveaway [{num_participants}]", callback_data=f"join_giveaway:{giveaway_id}"))
             reply_markup.add(telebot.types.InlineKeyboardButton("Leave Giveaway", callback_data=f"leave_giveaway:{giveaway_id}"))
             bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=reply_markup)
             bot.answer_callback_query(call.id, "You have successfully joined the giveaway.")
-
-            print(giveaways)
             
         elif call.data.startswith(("leave_giveaway:")):
             giveaway_id = call.data.split(":")[1]
@@ -130,7 +158,6 @@ def callback_handler(call):
             reply_markup.add(telebot.types.InlineKeyboardButton("Leave Giveaway", callback_data=f"leave_giveaway:{giveaway_id}"))
             bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=reply_markup)
             bot.answer_callback_query(call.id, "You have successfully left the giveaway.")
-
 
 def get_price(crypto_symbol):
     url = f'https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest?symbol={crypto_symbol}&convert=USD'
@@ -207,7 +234,6 @@ def bnx(message):
 def giveaway_handler(message):
     
     chat_id = message.chat.id
-    print(chat_id)
     if chat_id not in allowed_groups:
         bot.reply_to(message, "Sorry, this command is only available in specific groups.")
         return
@@ -224,37 +250,44 @@ def giveaway_handler(message):
         args = message.text.split()[1:]
         if len(args) == 4:
             amount, currency, num_winners, duration = args
+            role = None
             description = ""
-        elif len(args) >= 5:
-            amount, currency, num_winners, duration, *description = args
+        elif len(args) == 5:
+            amount, currency, num_winners, duration, role = args
+            description = ""
+        elif len(args) >= 6:
+            amount, currency, num_winners, duration, role, *description = args
             description = " ".join(description)
         else:
-            bot.reply_to(message, "Invalid command format. Usage: /giveaway <amount> <currency> <num_winners> <duration (optional)> ")
+            bot.reply_to(message, "Invalid command format. Usage: /giveaway <amount> <currency> <num_winners> <duration> <*role> <*description>")
             return
         try:
             amount = int(amount)
             num_winners = int(num_winners)
             duration = int(duration[:-1]) * {"d": 86400, "h": 3600, "m": 60, "s": 1}[duration[-1]]
         except ValueError:
-            bot.reply_to(message, "Invalid command format. Usage: /giveaway <amount> <currency> <num_winners> <duration>")
+            bot.reply_to(message, "Invalid command format. Usage: /giveaway <amount> <currency> <num_winners> <duration> <*role> <*description>")
             return
         except KeyError:
             bot.reply_to(message, "Invalid duration format. Duration should be in the format 1d, 1h, 1m, or 1s.")
             return
         except:
-            bot.reply_to(message, "Invalid command format. Usage: /giveaway <amount> <currency> <num_winners> <duration>")
-    
+            bot.reply_to(message, "Invalid command format. Usage: /giveaway <amount> <currency> <num_winners> <duration> <*role> <*description>")
+
         # Generate a unique identifier for the giveaway
         giveaway_id = str(uuid.uuid4())
 
         # Store the giveaway data using the unique identifier
-        giveaways[giveaway_id] = {"chat_id": chat_id,"amount": amount, "currency": currency, "num_winners": num_winners, "duration": duration, "participants": []}
+        giveaways[giveaway_id] = {"chat_id": chat_id,"amount": amount, "currency": currency, "num_winners": num_winners, "duration": duration, "role": role, "participants": []}
         num_participants = len(giveaways[giveaway_id]["participants"])
+        print(giveaways)
         time_left = duration
 
-        if description:
+        if role :
 
-            message_text = f"🎉 Giveaway Time 🎉 \n\n🎁Reward - {amount} {currency} \n\n🏆Winners - {num_winners}\n\n⏱End In {time_left//86400}d:{time_left%86400//3600}h:{time_left%3600//60}m:{time_left%60}s. \n\n Note - {description}"
+            message_text = f"🎉 Giveaway Time 🎉 \n\n🎁Reward - {amount} {currency} \n\n🏆Winners - {num_winners}\n\n⏱End In {time_left//86400}d:{time_left%86400//3600}h:{time_left%3600//60}m:{time_left%60}s. \n\n Requirements - you must have {role} role"
+        elif role and description :
+            message_text = f"🎉 Giveaway Time 🎉 \n\n🎁Reward - {amount} {currency} \n\n🏆Winners - {num_winners}\n\n⏱End In {time_left//86400}d:{time_left%86400//3600}h:{time_left%3600//60}m:{time_left%60}s. \n\n Requirements - you must have {role} role \n\n Note - {description}"
         else:
             message_text = f"🎉 Giveaway Time 🎉 \n\n🎁Reward - {amount} {currency} \n\n🏆Winners - {num_winners}\n\n⏱End In {time_left//86400}d:{time_left%86400//3600}h:{time_left%3600//60}m:{time_left%60}s."
         
@@ -269,8 +302,6 @@ def giveaway_handler(message):
         time_thread.start()
     else:
         bot.reply_to(message, "You must be an admin to use this command.")
-
-
 
 
 def end_giveaway(giveaway_id):
@@ -290,14 +321,92 @@ def end_giveaway(giveaway_id):
     message_text = f"The giveaway for {giveaway['amount']} {giveaway['currency']} has ended. The winners are:"
     for winner in winners:
         member = bot.get_chat_member(chat_id, winner)
-        first_name = member.first_name
-        message_text += f"<a href='tg://user?id={member}'>{first_name}</a> - @{member.user.username}"
-    message_text += f"\n\nPlease submit your wallet address to @xingman within 2 hours."
+        first_name = member.user.first_name
+        message_text += f"\n🔹<a href='tg://user?id={member.user.id}'>{first_name}</a> - @{member.user.username}"
     bot.send_message(chat_id, message_text , parse_mode='HTML')
    
 
+@bot.message_handler(commands=['role'])
+def give_role(message):
+    chat_id = message.chat.id
+    chat_members = bot.get_chat_administrators(chat_id)
+    user_id = message.from_user.id
+    is_admin = False
+    for member in chat_members:
+        if member.user.id == user_id and member.status in ['creator', 'administrator']:
+            is_admin = True
+            break
+
+    if is_admin:
+        try:
+            role = message.text.split()[1]
+        except ValueError:
+            bot.reply_to(message, "Invalid parameters!\nUsage: In reply of user msg /giverole <role>")
+            return
+        user = message.reply_to_message.from_user.id
+
+        # Load the role file
+        with open(role_file, 'r') as f:
+            roles = json.load(f)
+
+        # Add the user id to the list of users with the specified role in the current chat
+        chat_id = str(message.chat.id)
+        chat_roles = roles.get(chat_id, {})
+        role_users = chat_roles.get(role, [])
+        if user not in role_users:
+            role_users.append(user)
+            chat_roles[role] = role_users
+        roles[chat_id] = chat_roles
+
+        # Save the updated role file
+        with open(role_file, 'w') as f:
+            json.dump(roles, f, indent=4)
+        member = bot.get_chat_member(message.chat.id,user)
+        first_name = member.user.first_name
+        bot.send_message(message.chat.id, f"<a href='tg://user?id={member.user.id}'>{first_name}</a> has been given the role of <b>{role}</b> in this chat.",parse_mode='HTML')
+    else:
+        bot.reply_to(message, "You must be an admin to use this command.")
 
 
+
+@bot.message_handler(commands=['create_role'])
+def create_role(message):
+    
+    chat_id = message.chat.id
+    chat_members = bot.get_chat_administrators(chat_id)
+    user_id = message.from_user.id
+    is_admin = False
+    for member in chat_members:
+        if member.user.id == user_id and member.status in ['creator', 'administrator']:
+            is_admin = True
+            break
+
+    if is_admin:
+        try:
+            role_name = message.text.split()[1]
+        except IndexError:
+            bot.reply_to(message, "Invalid parameters! Usage: /create_role <role_name>")
+            return
+        # Load the existing roles from the file
+        try:
+            with open(role_file, 'r') as f:
+                roles = json.load(f)
+        except json.decoder.JSONDecodeError:
+            roles = {}
+
+        # Add the new role to the list of roles for the chat ID
+        if chat_id not in roles:
+            roles[chat_id] = {}
+        roles[chat_id][role_name] = []
+
+        # Save the updated list of roles to the file
+        with open(role_file, 'w') as f:
+            json.dump(roles, f, indent=4)
+
+        # Reply to the user with a confirmation message
+        bot.reply_to(message, f"{role_name} role has been created for this group!")
+    else:
+        bot.reply_to(message, "You must be an admin to use this command.")
 
 
 
@@ -368,18 +477,8 @@ def time_check():
         while True:
             for giveaway_id, giveaway in list(giveaways.items()):
                 giveaway["duration"] -= 10
-                num_winners = giveaway["num_winners"]
-                currency = giveaway["currency"]
-                amount = giveaway["amount"]
                 time_left = giveaway["duration"]
-                if time_left > 0 :
-                    message_text = f"🎉 Giveaway Time 🎉 \n\n🎁Reward - {amount} {currency} \n\n🏆Winners - {num_winners}\n\n⏱End In {time_left//86400}d:{time_left%86400//3600}h:{time_left%3600//60}m:{time_left%60}s."
-                    reply_markup = telebot.types.InlineKeyboardMarkup()
-                    num_participants = len(giveaway["participants"])
-                    reply_markup.add(telebot.types.InlineKeyboardButton(f"Join Giveaway [{num_participants}]", callback_data=f"join_giveaway:{giveaway_id}"))
-                    reply_markup.add(telebot.types.InlineKeyboardButton("Leave Giveaway", callback_data=f"leave_giveaway:{giveaway_id}"))
-                    bot.edit_message_text(chat_id=giveaway["chat_id"], message_id=giveaway["message_id"], text=message_text, reply_markup=reply_markup)
-                else:
+                if time_left == 0:
                     end_giveaway(giveaway_id)
             time.sleep(10)
 
